@@ -4,6 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const session = require("express-session");
 const sharp = require("sharp");
+require('dotenv').config();
 
 const app = express();
 

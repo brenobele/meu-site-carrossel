@@ -20,12 +20,16 @@ jobs:
         username: ${{ secrets.USERNAME }}
         key: ${{ secrets.KEY }}
         port: 22
+        envs: ADMIN_PASS
         script: |
           # Entra na pasta do projeto
           cd ~/meu-site-carrossel
           
           # Puxa as atualizações do GitHub
           git pull origin main
+
+          # Cria o arquivo .env usando a senha do GitHub
+          echo "ADMIN_PASS=$ADMIN_PASS" > .env
           
           # Instala dependências novas (caso tenha adicionado algo)
           npm install
