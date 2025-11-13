@@ -31,4 +31,4 @@ jobs:
           npm install
           
           # Reinicia o servidor para pegar as mudanças
-          pm2 restart meu-site
+          pm2 restart meu-site-carrossel
