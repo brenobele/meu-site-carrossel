@@ -8,7 +8,7 @@ const sharp = require("sharp");
 const app = express();
 
 const ADMIN_USER = "admin";
-const ADMIN_PASS = "+nwBcO18ok5O";
+const ADMIN_PASS = process.env.ADMIN_PASS;
 
 // Configuração do EJS (View Engine)
 app.set("view engine", "ejs");
