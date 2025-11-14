@@ -62,6 +62,7 @@
               accept="image/png, image/jpeg"
               required
             />
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <button type="submit" class="btn btn-success">Enviar</button>
           </form>
         </div>
@@ -93,7 +94,8 @@
                 method="POST"
                 onsubmit="return confirm('Tem certeza que deseja excluir esta imagem?');"
               >
-                <input type="hidden" name="imageName" value="<%= image %>" />
+                <input type="hidden" name="imageId" value="<%= image.id %>" />
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <button
                   type="submit"
                   class="btn btn-sm btn-outline-danger w-100"

@@ -6,6 +6,7 @@ const session = require("express-session");
 const sharp = require("sharp");
 const helmet = require("helmet");
 const sqlite3 = require("sqlite3").verbose();
+const crypto = require("node:crypto");
 const bcrypt = require("bcrypt");
 
 require("dotenv").config();
@@ -37,7 +38,11 @@ app.use(
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: IS_PRODUCTION, maxAge: 60000 * 60 * 24 },
+    cookie: { 
+      secure: IS_PRODUCTION,
+      maxAge: 60000 * 60 * 24,
+      sameSite: "lax",
+    },
   })
 );
 
@@ -46,7 +51,6 @@ const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  // [VALIDAÇÃO 2] Tipo de Arquivo: Apenas JPG e PNG
   fileFilter: (req, file, cb) => {
     const allowedMimes = ["image/jpeg", "image/png", "image/jpg"];
     if (allowedMimes.includes(file.mimetype)) {
@@ -151,6 +155,9 @@ app.get("/admin", checkAuth, (req, res) => {
   req.session.error = null;
   req.session.success = null;
 
+  const csrfToken = crypto.randomBytes(32).toString("hex");
+  req.session.csrfToken = csrfToken;
+
   const sql = "SELECT id, nome_original FROM imagens ORDER BY data_upload DESC";
 
   db.all(sql, [], (err, rows) => {
@@ -159,11 +166,23 @@ app.get("/admin", checkAuth, (req, res) => {
       images: rows || [],
       error: errorMessage,
       success: successMessage,
+      csrfToken: csrfToken,
     });
   });
 });
 
 app.post("/delete", checkAuth, (req, res) => {
+  const submittedToken = req.body._csrf;
+  const sessionToken = req.session.csrfToken;
+
+  req.session.csrfToken = null;
+
+  if (!submittedToken || !sessionToken || submittedToken !== sessionToken) {
+    console.warn("Possível ataque CSRF bloqueado.");
+    req.session.error = "Ação inválida ou expirada. Tente novamente.";
+    return res.redirect("/admin");
+  }
+
   const imageId = Number(req.body.imageId);
 
   const sql = "DELETE FROM imagens WHERE id = ?";
@@ -183,6 +202,15 @@ app.post("/upload", checkAuth, (req, res) => {
   const uploadSingle = upload.single("image");
 
   uploadSingle(req, res, async (err) => {
+    const submittedToken = req.body._csrf;
+    const sessionToken = req.session.csrfToken;
+
+    req.session.csrfToken = null;
+
+    if (!submittedToken || !sessionToken || submittedToken !== sessionToken) {
+      req.session.error = "Ação inválida ou expirada.";
+      return res.redirect("/admin");
+    }
     const setErrorAndRedirect = (msg) => {
       req.session.error = msg;
       return res.redirect("/admin");
