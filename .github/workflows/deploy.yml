@@ -16,6 +16,7 @@ jobs:
     - name: Deploy via SSH
       uses: appleboy/ssh-action@master
       env:
+        ADMIN_USER: ${{ secrets.ADMIN_USER }}
         ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
         SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
       with:
@@ -23,7 +24,7 @@ jobs:
         username: ${{ secrets.USERNAME }}
         key: ${{ secrets.KEY }}
         port: 22
-        envs: ADMIN_PASS,SESSION_SECRET
+        envs: ADMIN_USER,ADMIN_PASS,SESSION_SECRET
         script: |
           # Entra na pasta do projeto
           cd ~/meu-site-carrossel
@@ -32,8 +33,13 @@ jobs:
           git pull origin main
 
           # Cria o arquivo .env usando a senha do GitHub
-          echo "ADMIN_PASS=$ADMIN_PASS" > .env
+          echo "ADMIN_USER=$ADMIN_USER" > .env
+          echo "ADMIN_PASS=$ADMIN_PASS" >> .env
           echo "SESSION_SECRET=$SESSION_SECRET" >> .env
+
+          # Roda o script de inicialização do banco
+          # Isso cria o 'database.db' e as tabelas (se não existirem)
+          node init-db.js
           
           # Instala dependências novas (caso tenha adicionado algo)
           npm install

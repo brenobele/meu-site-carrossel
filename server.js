@@ -5,14 +5,27 @@ const fs = require("node:fs");
 const session = require("express-session");
 const sharp = require("sharp");
 const helmet = require("helmet");
+const sqlite3 = require("sqlite3").verbose();
+const bcrypt = require("bcrypt");
+
 require("dotenv").config();
 
 const app = express();
 
-const ADMIN_USER = "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS;
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+const db = new sqlite3.Database(
+  "./database.db",
+  sqlite3.OPEN_READWRITE,
+  (err) => {
+    if (err) {
+      console.error("Erro ao conectar no banco de dados:", err.message);
+    } else {
+      console.log("Conectado ao banco de dados SQLite.");
+    }
+  }
+);
 
 app.set(helmet());
 app.set("view engine", "ejs");
@@ -29,19 +42,10 @@ app.use(
 );
 
 // Configuração do Multer (Upload de Imagens)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "public/uploads/");
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
-  },
-});
+const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  // [VALIDAÇÃO 1] Tamanho: 5MB (em bytes: 5 * 1024 * 1024)
-  limits: { fileSize: 5 * 1024 * 1024 },
-
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   // [VALIDAÇÃO 2] Tipo de Arquivo: Apenas JPG e PNG
   fileFilter: (req, file, cb) => {
     const allowedMimes = ["image/jpeg", "image/png", "image/jpg"];
@@ -63,11 +67,31 @@ function checkAuth(req, res, next) {
 }
 
 app.get("/", (req, res) => {
-  const directoryPath = path.join(__dirname, "public/uploads");
-  fs.readdir(directoryPath, (err, files) => {
-    if (err) return res.render("index", { images: [] });
-    const images = files.filter((file) => /\.(jpg|jpeg|png|)$/i.test(file));
-    res.render("index", { images: images });
+  const sql = "SELECT id FROM imagens ORDER BY data_upload DESC";
+
+  db.all(sql, [], (err, rows) => {
+    if (err) {
+      console.error("Erro ao buscar imagens:", err);
+      return res.render("index", { images: [] });
+    }
+    // 'rows' será: [{id: 1}, {id: 2}, {id: 3}]
+    res.render("index", { images: rows });
+  });
+});
+
+app.get("/imagem/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const sql = "SELECT mimetype, imagem_data FROM imagens WHERE id = ?";
+
+  db.get(sql, [id], (err, row) => {
+    if (err || !row) {
+      return res.status(404).send("Imagem não encontrada.");
+    }
+
+    // Define o cabeçalho de tipo de conteúdo (ex: 'image/jpeg')
+    res.setHeader("Content-Type", row.mimetype);
+    // Envia o buffer binário (BLOB) como resposta
+    res.send(row.imagem_data);
   });
 });
 
@@ -83,14 +107,35 @@ app.get("/login", (req, res) => {
 app.post("/login", (req, res) => {
   const { usuario, senha } = req.body;
 
-  if (usuario === ADMIN_USER && senha === ADMIN_PASS) {
-    req.session.loggedin = true;
-    req.session.username = usuario;
-    res.redirect("/admin");
-  } else {
-    req.session.error = "Usuário ou senha incorretos!";
-    res.redirect("/login");
-  }
+  const sql = "SELECT * FROM usuarios WHERE email = ?";
+
+  db.get(sql, [usuario], (err, user) => {
+    if (err) {
+      req.session.error = "Erro interno no servidor.";
+      return res.redirect("/login");
+    }
+
+    if (!user) {
+      req.session.error = "Usuário ou senha incorretos!";
+      return res.redirect("/login");
+    }
+
+    bcrypt.compare(senha, user.senha, (err, isMatch) => {
+      if (err) {
+        req.session.error = "Erro interno no servidor.";
+        return res.redirect("/login");
+      }
+
+      if (isMatch) {
+        req.session.loggedin = true;
+        req.session.username = user.email;
+        res.redirect("/admin");
+      } else {
+        req.session.error = "Usuário ou senha incorretos!";
+        res.redirect("/login");
+      }
+    });
+  });
 });
 
 app.get("/logout", (req, res) => {
@@ -100,21 +145,18 @@ app.get("/logout", (req, res) => {
 });
 
 app.get("/admin", checkAuth, (req, res) => {
-  const directoryPath = path.join(__dirname, "public/uploads");
-
   const errorMessage = req.session.error;
   const successMessage = req.session.success;
 
   req.session.error = null;
   req.session.success = null;
 
-  fs.readdir(directoryPath, (err, files) => {
-    const images = err
-      ? []
-      : files.filter((file) => /\.(jpg|jpeg|png|gif)$/i.test(file));
+  const sql = "SELECT id, nome_original FROM imagens ORDER BY data_upload DESC";
 
+  db.all(sql, [], (err, rows) => {
+    // 'rows' será: [{id: 1, nome_original: 'foto.jpg'}, ...]
     res.render("admin", {
-      images: images,
+      images: rows || [],
       error: errorMessage,
       success: successMessage,
     });
@@ -122,15 +164,17 @@ app.get("/admin", checkAuth, (req, res) => {
 });
 
 app.post("/delete", checkAuth, (req, res) => {
-  const imageName = req.body.imageName;
+  const imageId = Number(req.body.imageId);
 
-  const safeName = path.basename(imageName);
-  const imagePath = path.join(__dirname, "public/uploads", safeName);
-
-  fs.unlink(imagePath, (err) => {
-    if (err) {
-      console.error("Erro ao deletar:", err);
+  const sql = "DELETE FROM imagens WHERE id = ?";
+  db.run(sql, [imageId], (dbErr) => {
+    if (dbErr) {
+      console.error("Erro ao deletar do banco:", dbErr);
+      req.session.error = "Erro ao deletar imagem do banco de dados.";
+    } else {
+      req.session.success = "Imagem deletada com sucesso.";
     }
+
     res.redirect("/admin");
   });
 });
@@ -141,9 +185,6 @@ app.post("/upload", checkAuth, (req, res) => {
   uploadSingle(req, res, async (err) => {
     const setErrorAndRedirect = (msg) => {
       req.session.error = msg;
-      if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
       return res.redirect("/admin");
     };
 
@@ -160,8 +201,8 @@ app.post("/upload", checkAuth, (req, res) => {
     }
 
     try {
-      const metadata = await sharp(req.file.path).metadata();
-      const MAX_DIMENSION = 2560; // Limite 2K
+      const metadata = await sharp(req.file.buffer).metadata();
+      const MAX_DIMENSION = 2560;
 
       if (metadata.width > MAX_DIMENSION || metadata.height > MAX_DIMENSION) {
         return setErrorAndRedirect(
@@ -169,8 +210,25 @@ app.post("/upload", checkAuth, (req, res) => {
         );
       }
 
-      req.session.success = "Imagem enviada com sucesso!";
-      res.redirect("/admin");
+      const sql =
+        "INSERT INTO imagens (nome_original, mimetype, imagem_data, data_upload) VALUES (?, ?, ?, ?)";
+      const dataUpload = new Date().toISOString();
+      const params = [
+        req.file.originalname,
+        req.file.mimetype,
+        req.file.buffer,
+        dataUpload,
+      ];
+
+      db.run(sql, params, (dbErr) => {
+        if (dbErr) {
+          console.error("Erro ao salvar no banco:", dbErr);
+          return setErrorAndRedirect("Erro interno ao salvar a imagem.");
+        }
+
+        req.session.success = "Imagem enviada com sucesso!";
+        res.redirect("/admin");
+      });
     } catch (error) {
       console.error(error);
       setErrorAndRedirect("Erro interno ao processar a imagem.");
@@ -183,7 +241,7 @@ app.use((req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error(err.stack); 
+  console.error(err.stack);
   res.status(500).render("500");
 });
 

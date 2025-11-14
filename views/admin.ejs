@@ -74,7 +74,7 @@
         <div class="col-md-3 col-6">
           <div class="card h-100">
             <img
-              src="/uploads/<%= image %>"
+              src="/imagem/<%= image.id %>"
               class="card-img-top"
               style="height: 150px; object-fit: cover"
               alt="Thumb"
@@ -83,9 +83,9 @@
             <div class="card-body text-center p-2">
               <small
                 class="d-block text-muted text-truncate mb-2"
-                title="<%= image %>"
+                title="<%= image.nome_original %>"
               >
-                <%= image %>
+                <%= image.nome_original %>
               </small>
 
               <form
