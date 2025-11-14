@@ -4,6 +4,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const session = require("express-session");
 const sharp = require("sharp");
+const helmet = require("helmet");
 require("dotenv").config();
 
 const app = express();
@@ -13,6 +14,7 @@ const ADMIN_PASS = process.env.ADMIN_PASS;
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
+app.set(helmet());
 app.set("view engine", "ejs");
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
@@ -22,7 +24,7 @@ app.use(
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: IS_PRODUCTION },
+    cookie: { secure: IS_PRODUCTION, maxAge: 60000 * 60 * 24 },
   })
 );
 
@@ -71,7 +73,11 @@ app.get("/", (req, res) => {
 
 app.get("/login", (req, res) => {
   if (req.session.loggedin) return res.redirect("/admin");
-  res.render("login");
+
+  const errorMessage = req.session.error;
+  req.session.error = null;
+
+  res.render("login", { error: errorMessage });
 });
 
 app.post("/login", (req, res) => {
@@ -82,12 +88,14 @@ app.post("/login", (req, res) => {
     req.session.username = usuario;
     res.redirect("/admin");
   } else {
-    res.render("login", { erro: "Usuário ou senha incorretos!" });
+    req.session.error = "Usuário ou senha incorretos!";
+    res.redirect("/login");
   }
 });
 
 app.get("/logout", (req, res) => {
   req.session.destroy();
+  res.cookie("connect.sid", { maxAge: 0 });
   res.redirect("/");
 });
 
@@ -168,6 +176,15 @@ app.post("/upload", checkAuth, (req, res) => {
       setErrorAndRedirect("Erro interno ao processar a imagem.");
     }
   });
+});
+
+app.use((req, res, next) => {
+  res.status(404).render("404");
+});
+
+app.use((err, req, res, next) => {
+  console.error(err.stack); 
+  res.status(500).render("500");
 });
 
 const PORT = process.env.PORT || 3000;
