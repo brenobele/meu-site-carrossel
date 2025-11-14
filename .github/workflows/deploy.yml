@@ -17,12 +17,13 @@ jobs:
       uses: appleboy/ssh-action@master
       env:
         ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+        SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
       with:
         host: ${{ secrets.HOST }}
         username: ${{ secrets.USERNAME }}
         key: ${{ secrets.KEY }}
         port: 22
-        envs: ADMIN_PASS
+        envs: ADMIN_PASS,SESSION_SECRET
         script: |
           # Entra na pasta do projeto
           cd ~/meu-site-carrossel
@@ -32,6 +33,7 @@ jobs:
 
           # Cria o arquivo .env usando a senha do GitHub
           echo "ADMIN_PASS=$ADMIN_PASS" > .env
+          echo "SESSION_SECRET=$SESSION_SECRET" >> .env
           
           # Instala dependências novas (caso tenha adicionado algo)
           npm install
