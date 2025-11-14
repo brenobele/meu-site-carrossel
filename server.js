@@ -27,7 +27,7 @@ const db = new sqlite3.Database(
   }
 );
 
-app.set(helmet());
+app.use(helmet());
 app.set("view engine", "ejs");
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
